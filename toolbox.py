@@ -72,7 +72,7 @@ class SummarizeTasks():
         self.func = summarizeTasks
         self.schema = {
             "name": "SummarizeTasks",
-            "description": "Summarizes a user's tasks",
+            "description": "Summarizes a user's tasks if a user cannot remember them, or asks for their todo / tasks / chores list",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -114,7 +114,7 @@ def summarizeTasks(userID, prompt):
 
 
 def sendSelfie(userID, emotion):
-    fractal.sendPhoto(r"Global\Media\DianeSelfie.jpg", userID)
+    fractal.sendPhoto(r"Media\DianeSelfie.jpg", userID)
     return "Selfie sent."
 
 
@@ -170,6 +170,7 @@ class Agent():
                 {"role": "system", "content": f"These are your instructions, be organized and highly detailed: {prompt}"},
                 {"role": "user", "content": str(data)}],
         )
+        print(response)
         return response["choices"][0]["message"].get("content")
 
 

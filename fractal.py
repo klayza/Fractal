@@ -127,15 +127,13 @@ def reduceMemory(userID, character):
 
 def getAvailableCharacters():
     '''Returns list of character names in global'''
-    folderToSearch = r"Global\Characters"
+    folderToSearch = r"Characters"
     if not os.path.exists(folderToSearch):
         return []
     files = os.listdir(folderToSearch)
     characters = [os.path.splitext(file)[0] for file in files if os.path.isfile(
         os.path.join(folderToSearch, file))]
     return characters
-
-# Deprecated
 
 
 def getFileWordCount(character):
@@ -166,7 +164,7 @@ def insertSDParams(parameters, default, weight):
 def getCharacterPrompt(userID, character):
     '''Returns a json representation of a character'''
     if userID == 0:
-        with open(f"Global/Characters/{character}.json", "r+", encoding="utf-8") as f:
+        with open(f"Characters/{character}.json", "r+", encoding="utf-8") as f:
             return json.load(f)
     else:
         with open(f"Data/{userID}/Characters/{character}/CharacterCard.json", "r+", encoding="utf-8") as f:
@@ -434,9 +432,18 @@ def initComm():
     app.run_polling(poll_interval=5)
 
 
+def checkUserExists(userID):
+    return os.path.exists(f"Data/{userID}")    
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    clearRuntimeVars(update.message.chat.id)
-    await update.message.reply_text('Greetings!\nWho am I speaking to?')
+    config = getRuntimeVars(update.message.chat.id)
+    if checkUserExists(update.message.chat.id) and config.get("userName") != "Guest":
+        await update.message.reply_text(f"Hey {config.get('userName')}, who would you like to speak to?")
+        setRuntimeVars(update.message.chat.id, {"character": None})
+    else:
+        clearRuntimeVars(update.message.chat.id)
+        await update.message.reply_text('Greetings!\nWho am I speaking to?')
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -467,12 +474,23 @@ def clearConversation(userID, character):
         f.write("")
 
 
+def characterSelect(text, userID):
+    characters = getAvailableCharacters()
+    if len(characters) == 0:
+        return "No characters found"
+    # Adds a character to the user's config
+    if text in str(characters).lower():
+        setRuntimeVars(userID, {"character": text.capitalize()})
+        genCharacterVars(userID, text.capitalize(), True)
+        return f"{text.capitalize()} joined..."
+
+
 def processUserInit(text: str, userID):
     incoming: str = text.lower()
     config = getRuntimeVars(userID)
 
     # Detects users and stores their config
-    if (config.get("userName") == "Guest"):
+    if (config.get("userName") == "Guest" and config.get("userName") != None):
         if len(text.split(" ")) < 2:
             setRuntimeVars(userID, {"userName": text})
             return f"Hey {text}, who would you like to speak to?"
@@ -480,16 +498,7 @@ def processUserInit(text: str, userID):
             return "Try writing your first name, or shorter length"
 
     elif (not config.get("userName") == "Guest"):
-        characters = getAvailableCharacters()
-        if len(characters) == 0:
-            return "No characters found"
-        # Adds a character to the user's config
-        if incoming in str(characters).lower():
-            setRuntimeVars(userID, {"character": incoming.capitalize()})
-            genCharacterVars(userID, incoming.capitalize(), True)
-            return f"{incoming.capitalize()} joined..."
-
-        return "Name not found"
+        return characterSelect(incoming, userID)
 
     return 'You silly, enter your name!'
 
@@ -612,7 +621,7 @@ def clearRuntimeVars(id):
 
 
 def getSDPayload(type):
-    with open(f"Global/Payloads.json", "r") as f:
+    with open(f"Payloads.json", "r") as f:
         if type == "default":
             return json.load(f)["default"]
 
