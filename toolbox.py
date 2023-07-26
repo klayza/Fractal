@@ -162,7 +162,7 @@ def evalTask(task, values=None, interests=None):
     if not values or not interests:
         return None
 
-    openai.api_key = "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"
+    openai.api_key = fractal.OPENAI_API_KEY
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo-0613",
         messages=[
