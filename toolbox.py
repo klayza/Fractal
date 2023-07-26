@@ -66,6 +66,26 @@ class AddNewTask():
 
 
 @Tool
+class SummarizeTasks():
+    def __init__(self):
+        self.needID = True
+        self.func = summarizeTasks
+        self.schema = {
+            "name": "SummarizeTasks",
+            "description": "Summarizes a user's tasks",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "description": "Instructions on how the tasks should be organized"
+                    },
+                }
+            }
+        }
+
+
+@Tool
 class SendSelfie():
     def __init__(self):
         self.needID = True
@@ -85,6 +105,12 @@ class SendSelfie():
 
             # in the future add expressions
         }
+
+
+def summarizeTasks(userID, prompt):
+    tasks = fractal.getUserData(userID)
+    agent = Agent()
+    return agent.Do(prompt, tasks)
 
 
 def sendSelfie(userID, emotion):
@@ -133,6 +159,18 @@ def addNewTask(userID, args):
             json.dump(old, f, indent=4)
 
     return response
+
+
+class Agent():
+    def Do(self, prompt, data):
+        openai.api_key = fractal.OPENAI_API_KEY
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo-0613",
+            messages=[
+                {"role": "system", "content": f"These are your instructions, be organized and highly detailed: {prompt}"},
+                {"role": "user", "content": str(data)}],
+        )
+        return response["choices"][0]["message"].get("content")
 
 
 class Task():
@@ -231,5 +269,6 @@ def get_current_weather(location, unit="fahrenheit"):
     }
     return json.dumps(weather_info)
 
+
 if __name__ == "__main__":
-    pass # Testing goes here
+    pass  # Testing goes here
