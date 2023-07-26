@@ -1,0 +1,24 @@
+{
+    "default": {
+        "steps": 35,
+        "cfg_scale": 8,
+        "sampler_name": "DPM++ 2M Karras",
+        "width": 640,
+        "height": 1024,
+        "hr_upscaler": "BSRGAN",
+        "hr_scale": 2,
+        "override_settings": {
+            "sd_model_checkpoint": "dreamshaper7Pruned.0q7X.safetensors [ed989d673d]"
+        }
+    },
+    "quick": {
+        "steps": 35,
+        "cfg_scale": 8,
+        "sampler_name": "DPM++ 2M Karras",
+        "width": 512,
+        "height": 512,
+        "override_settings": {
+            "sd_model_checkpoint": "dreamshaper7Pruned.0q7X.safetensors [ed989d673d]"
+        }
+    }
+}

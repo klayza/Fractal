@@ -1,0 +1,9 @@
+Archive/
+Media/
+Data/*
+Characters/*.json
+!Characters/Kamelle.json
+/config.json
+/temp.py
+/api.ini
+/__pycache__
