@@ -108,9 +108,10 @@ class SendSelfie():
 
 
 def summarizeTasks(userID, prompt):
-    tasks = fractal.getUserData(userID)
+    tasks = fractal.getUserData(userID).get("tasks")
     agent = Agent()
-    return agent.Do(prompt, tasks)
+    # return agent.Do(prompt, tasks)
+    return tasks
 
 
 def sendSelfie(userID, emotion):
