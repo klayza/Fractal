@@ -5,6 +5,7 @@ from datetime import timedelta
 import fractal
 
 registeredTools = []
+registeredMicroTools = []
 
 
 def Tool(cls):
@@ -13,14 +14,20 @@ def Tool(cls):
     return cls
 
 
+def MicroTool(cls):
+    cls.isMicroTool = True
+    registeredMicroTools.append(cls)
+    return cls
+
+
 @Tool
 class AddNewTask():
     def __init__(self):
         self.needID = True
-        self.func = addNewTask
+        self.func = self.addNewTask
         self.schema = {
             "name": "AddNewTask",
-            "description": "Add a task to a user's todo / task list",
+            "description": "Add a task / reminder to a user's todo / task list",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,15 +71,56 @@ class AddNewTask():
             }
         }
 
+    def addNewTask(self, userID, args):
+        task = Task(**args)
+        old = []
+        prioritized = {}
+        canWrite = False
+        response = {"header": ""}
+        old = fractal.getUserData(userID)
+
+        new = {
+            "name": task.name,
+            "description": task.description,
+            "status": task.status,
+            "start": task.start,
+            "due": task.due,
+            "priority": task.priority,
+            "importance": task.importance,
+            "comments": task.comments
+        }
+
+        if old.get("values") or old.get("interests"):
+            # Will need to make eval simpler and focused on priorities when given multiple tasks (Was getting importance of 8 for doing dishes!)
+            # prioritized = evalTask(new, old["values"], old["interests"])
+            pass
+
+        if prioritized:
+            canWrite = True
+            old["tasks"].append(prioritized)
+            response["header"] = "Task added and prioritized"
+            response = prioritized
+        else:
+            canWrite = True
+            old["tasks"].append(new)
+            response["header"] = "Task added"
+            response["content"] = prioritized
+
+        if canWrite:
+            with open(f"Data/{userID}/User.json", "w", encoding="utf-8") as f:
+                json.dump(old, f, indent=4)
+
+        return response
+
 
 @Tool
 class SummarizeTasks():
     def __init__(self):
         self.needID = True
-        self.func = summarizeTasks
+        self.func = self.summarizeTasks
         self.schema = {
             "name": "SummarizeTasks",
-            "description": "Summarizes a user's tasks if a user cannot remember them, or asks for their todo / tasks / chores list",
+            "description": "Summarizes a user's tasks. Only use if a user cannot remember them, or asks for their a list of their todo / tasks / chores list",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,12 +132,17 @@ class SummarizeTasks():
             }
         }
 
+    def summarizeTasks(self, userID, prompt):
+        tasks = fractal.getUserData(userID).get("tasks")
+        tasks = [task for task in tasks if task["status"] != "complete"]
+        return tasks
+
 
 @Tool
 class SendSelfie():
     def __init__(self):
         self.needID = True
-        self.func = sendSelfie
+        self.func = self.sendSelfie
         self.schema = {
             "name": "SendSelfie",
             "description": "Sends a selfie to the user",
@@ -102,86 +155,147 @@ class SendSelfie():
                         }
                     }
             }
-
-            # in the future add expressions
         }
 
-
-def summarizeTasks(userID, prompt):
-    tasks = fractal.getUserData(userID).get("tasks")
-    agent = Agent()
-    # return agent.Do(prompt, tasks)
-    return tasks
+    def sendSelfie(self, userID):
+        fractal.sendPhoto(r"Media\DianeSelfie.jpg", userID)
+        return "Selfie sent."
 
 
-def sendSelfie(userID, emotion):
-    fractal.sendPhoto(r"Media\DianeSelfie.jpg", userID)
-    return "Selfie sent."
+@Tool
+class CompleteTask():
+    def __init__(self):
+        self.needID = True
+        self.func = self.markTaskComplete
+        self.schema = {
+            "name": "CompleteTask",
+            "description": "Mark a task complete. Only use when a user explicitly says they've completed something",
+            "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_name": {
+                            "type": "string",
+                            "description": "The general name of the task"
+                        }
+                    }
+            },
+            "required": ["task_name"]
+        }
+
+    def markTaskComplete(self, userID, generalTaskName):
+        tasks = fractal.getUserData(userID).get("tasks")
+        tasks = [task for task in tasks if task["status"] != "complete"]
+
+        agent = Agent()
+        agent.Load([SelectChoice])
+        response = agent.Do(
+            prompt=f"Select the choice that is the closest in meaning to '{generalTaskName}'",
+            data=self.toEnglish(tasks))
+        if response["index"].isdigit:
+            return self.setTaskStatus(userID, int(response.get("index")), "complete")
+        else:
+            return "Task not found"
+
+    def toEnglish(self, tasks):
+        taskString = ""
+        i = 1
+        for task in tasks:
+            taskString += str(i) + " - " + task["name"] + "\n"
+            i += 1
+        return taskString
+    
+    def setTaskStatus(self, userID, index, status):
+        data = fractal.getUserData(userID)
+        data["tasks"][index - 1]["status"] = status
+        fractal.setUserData(userID, data)
+        return "Task set completed"
 
 
-def addNewTask(userID, args):
-    # Need to loop over each arg, like description=args[0], but want to have the description= only defined in the class
-    task = Task(**args)
-    old = []
-    prioritized = {}
-    canWrite = False
-    response = {"header": ""}
-    old = fractal.getUserData(userID)
+# user: hey I did that one task! ai: *detects user completed task* -> markTaskComplete(1349, that one task) -> loadAgent("")
 
-    new = {
-        "name": task.name,
-        "description": task.description,
-        "status": task.status,
-        "start": task.start,
-        "due": task.due,
-        "priority": task.priority,
-        "importance": task.importance,
-        "comments": task.comments
-    }
+@MicroTool
+class SelectChoice():
+    def __init__(self):
+        self.needID = False
+        self.func = self.selectChoice
+        self.schema = {
+            "name": "SelectChoice",
+            "description": "Choose a number to select a choice",
+            "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "index": {
+                            "type": "string",
+                            "description": "A number. The number which represents your choice."
+                        }
+                    }
+            }
+        }
 
-    if old.get("values") or old.get("interests"):
-        # Will need to make eval simpler and focused on priorities when given multiple tasks (Was getting importance of 8 for doing dishes!)
-        # prioritized = evalTask(new, old["values"], old["interests"])
-        pass
-
-    if prioritized:
-        canWrite = True
-        old["tasks"].append(prioritized)
-        response["header"] = "Prioritized task"
-        response = prioritized
-    else:
-        canWrite = True
-        old["tasks"].append(new)
-        response["header"] = "Wasn't able to prioritize new task because user was missing either values or interests"
-        response["content"] = prioritized
-
-    if canWrite:
-        with open(f"Data/{userID}/User.json", "w", encoding="utf-8") as f:
-            json.dump(old, f, indent=4)
-
-    return response
+    # Pseudo-function (Only need for paramaterized responses)
+    def selectChoice(self, choice):
+        return choice
 
 
 class Agent():
+    def __init__(self):
+        self.availableTools = registeredMicroTools
+        self.useAvailable = False
+        self.loadedTools = []
+
     def Do(self, prompt, data):
         openai.api_key = fractal.OPENAI_API_KEY
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0613",
-            messages=[
-                {"role": "system", "content": f"These are your instructions, be organized and highly detailed: {prompt}"},
-                {"role": "user", "content": str(data)}],
-        )
-        print(response)
-        return response["choices"][0]["message"].get("content")
+        messages = []
+        messages.append({"role": "system", "content": f"These are your instructions, be organized and highly detailed: {prompt}"})
+        messages.append({"role": "user", "content": str(data)})
+        functions = None
+        response = None
+        if self.loadedTools:
+            toolInstances = {tool.__name__: tool() for tool in self.loadedTools}
+            toolSchemas = [instance.schema for instance in toolInstances.values()]
+            functions = toolSchemas
+        elif self.useAvailable and self.availableTools:
+            toolInstances = {tool.__name__: tool() for tool in self.availableTools}
+            toolSchemas = [instance.schema for instance in toolInstances.values()]
+            functions = toolSchemas
+        if functions:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo-0613",
+                messages=messages,
+                functions=functions,
+                function_call="auto"
+            )
+            responseMsg = response["choices"][0]["message"]
+
+            if responseMsg.get("function_call"):
+                chosenTool = toolInstances.get(responseMsg["function_call"]["name"])
+                functionToCall = chosenTool.func
+
+                functionJsonArgs = json.loads(
+                    responseMsg["function_call"]["arguments"])
+
+                return functionToCall(functionJsonArgs)
+
+        else:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo-0613",
+                messages=messages)
+
+        return response
+        # return response["choices"][0]["message"].get("content")
+
+    def Load(self, toolNames):
+        for name in toolNames:
+            self.loadedTools.append(name)
 
 
 class Task():
     start_default = datetime.today().strftime("%m-%d-%Y %H:%M")
-    due_default = (datetime.today() + timedelta(days=7)
-                   ).strftime("%m-%d-%Y %H:%M")
+    due_default = (datetime.today() + timedelta(days=7)).strftime("%m-%d-%Y %H:%M")
 
-    def __init__(self, name, description, start=start_default, due=due_default,
-                 status="unstarted", priority=None, importance=None, comments=None):
+    def __init__(
+        self, name, description, start=start_default, due=due_default,
+        status="unstarted", priority=None, importance=None, comments=None):
         self.name = name
         self.description = description
         self.status = status
@@ -194,6 +308,10 @@ class Task():
 
 def getAvailableTools():
     return registeredTools
+
+
+def genSchema(obj):
+    pass
 
 
 def evalTask(task, values=None, interests=None):
@@ -259,18 +377,7 @@ def evalTask(task, values=None, interests=None):
     print(response)
 
 
-# Example dummy function hard coded to return the same weather
-# In production, this could be your backend API or an external API
-def get_current_weather(location, unit="fahrenheit"):
-    """Get the current weather in a given location"""
-    weather_info = {
-        "location": location,
-        "temperature": "72",
-        "unit": unit,
-        "forecast": ["sunny", "windy"],
-    }
-    return json.dumps(weather_info)
-
-
 if __name__ == "__main__":
+    print(CompleteTask().markTaskComplete(fractal.ADMIN_ID, "Clayton made some type of ramen"))
+    CompleteTask().setTaskStatus(fractal.ADMIN_ID, 4, "complete")
     pass  # Testing goes here

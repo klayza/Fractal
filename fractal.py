@@ -353,7 +353,7 @@ def sendMessage(userID, character, userMessage):
         if chosenTool.needID:
             functionResponse = functionToCall(userID, functionJsonArgs)
         else:
-            functionResponse = functionToCall(userID, functionJsonArgs)
+            functionResponse = functionToCall(functionJsonArgs)
 
         messages.append(responseMsg)
         messages.append(
@@ -629,6 +629,12 @@ def getSDPayload(type):
 def getUserData(userID):
     with open(f"Data/{userID}/User.json", "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def setUserData(userID, new):
+    if os.path.exists(f"Data/{userID}/User.json"):
+        with open(f"Data/{userID}/User.json", "w+", encoding="utf-8") as f:
+            json.dump(new, f, indent=4)
 
 
 if __name__ == "__main__":
