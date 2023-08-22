@@ -21,7 +21,7 @@ def MicroTool(cls):
 
 
 @Tool
-class AddNewTask():
+class AddNewTask:
     def __init__(self):
         self.needID = True
         self.func = self.addNewTask
@@ -33,42 +33,43 @@ class AddNewTask():
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "The name / title of the task"
+                        "description": "The name / title of the task",
                     },
-                    "description": {"type": "string", "description": "The description of the task"},
+                    "description": {
+                        "type": "string",
+                        "description": "The description of the task",
+                    },
                     "start": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "The start time of the task "
+                        "description": "The start time of the task ",
                     },
                     "due": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "The due time of the task"
+                        "description": "The due time of the task",
                     },
                     "status": {
                         "type": "string",
                         "description": "The status of the task",
-                        "enum": ["unstarted", "in-progress", "completed"]
+                        "enum": ["unstarted", "in-progress", "completed"],
                     },
                     "priority": {
                         "type": "integer",
-                        "description": "The priority of the task"
+                        "description": "The priority of the task",
                     },
                     "importance": {
                         "type": "integer",
-                        "description": "The importance of the task"
+                        "description": "The importance of the task",
                     },
                     "comments": {
                         "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "description": "Comments related to the task"
-                    }
+                        "items": {"type": "string"},
+                        "description": "Comments related to the task",
+                    },
                 },
-                "required": ["name", "description"]
-            }
+                "required": ["name", "description"],
+            },
         }
 
     def addNewTask(self, userID, args):
@@ -87,7 +88,7 @@ class AddNewTask():
             "due": task.due,
             "priority": task.priority,
             "importance": task.importance,
-            "comments": task.comments
+            "comments": task.comments,
         }
 
         if old.get("values") or old.get("interests"):
@@ -114,7 +115,7 @@ class AddNewTask():
 
 
 @Tool
-class SummarizeTasks():
+class SummarizeTasks:
     def __init__(self):
         self.needID = True
         self.func = self.summarizeTasks
@@ -126,10 +127,10 @@ class SummarizeTasks():
                 "properties": {
                     "method": {
                         "type": "string",
-                        "description": "Instructions on how the tasks should be organized"
+                        "description": "Instructions on how the tasks should be organized",
                     },
-                }
-            }
+                },
+            },
         }
 
     def summarizeTasks(self, userID, prompt):
@@ -139,7 +140,7 @@ class SummarizeTasks():
 
 
 @Tool
-class SendSelfie():
+class SendSelfie:
     def __init__(self):
         self.needID = True
         self.func = self.sendSelfie
@@ -147,23 +148,48 @@ class SendSelfie():
             "name": "SendSelfie",
             "description": "Sends a selfie to the user",
             "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "current emotion in selfie"
-                        }
-                    }
-            }
+                "type": "object",
+                "properties": {
+                    "emotion": {
+                        "type": "string",
+                        "description": "current emotion in selfie",
+                    },
+                    "verb": {
+                        "type": "string",
+                        "description": "what you are currently doing in a single word",
+                    },
+                    "place": {
+                        "type": "string",
+                        "description": "where you are (ex. diner, bedroom, nature, etc.)",
+                    },
+                    "condition": {
+                        "type": "string",
+                        "description": "the state of your environment (ex. raining, night, day, thunder)",
+                    },
+                    # "nsfw": {
+                    #     "type": "boolean",
+                    #     "description": "Whether the content is NSFW (Not Safe For Work)",
+                    # },
+                },
+            },
+            "required": ["emotion", "verb", "place", "condition"],
         }
 
-    def sendSelfie(self, userID):
-        fractal.sendPhoto(r"Media\DianeSelfie.jpg", userID)
+    def sendSelfie(self, userID, args):
+        valList = list(args.values())
+
+        if args.get("nsfw", False):
+            pl = fractal.buildSDPayload(userID, valList, "decrepit")
+        else:
+            pl = fractal.buildSDPayload(userID, valList)
+
+        path = fractal.getImage(pl)
+        fractal.sendPhoto(path, userID)
         return "Selfie sent."
 
 
 @Tool
-class CompleteTask():
+class CompleteTask:
     def __init__(self):
         self.needID = True
         self.func = self.markTaskComplete
@@ -171,15 +197,15 @@ class CompleteTask():
             "name": "CompleteTask",
             "description": "Mark a task complete. Only use when a user explicitly says they've completed something",
             "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "task_name": {
-                            "type": "string",
-                            "description": "The general name of the task"
-                        }
+                "type": "object",
+                "properties": {
+                    "task_name": {
+                        "type": "string",
+                        "description": "The general name of the task",
                     }
+                },
             },
-            "required": ["task_name"]
+            "required": ["task_name"],
         }
 
     def markTaskComplete(self, userID, generalTaskName):
@@ -190,7 +216,8 @@ class CompleteTask():
         agent.Load([SelectChoice])
         response = agent.Do(
             prompt=f"Select the choice that is the closest in meaning to '{generalTaskName}'",
-            data=self.toEnglish(tasks))
+            data=self.toEnglish(tasks),
+        )
         if response["index"].isdigit:
             return self.setTaskStatus(userID, int(response.get("index")), "complete")
         else:
@@ -203,7 +230,7 @@ class CompleteTask():
             taskString += str(i) + " - " + task["name"] + "\n"
             i += 1
         return taskString
-    
+
     def setTaskStatus(self, userID, index, status):
         data = fractal.getUserData(userID)
         data["tasks"][index - 1]["status"] = status
@@ -213,8 +240,9 @@ class CompleteTask():
 
 # user: hey I did that one task! ai: *detects user completed task* -> markTaskComplete(1349, that one task) -> loadAgent("")
 
+
 @MicroTool
-class SelectChoice():
+class SelectChoice:
     def __init__(self):
         self.needID = False
         self.func = self.selectChoice
@@ -222,14 +250,14 @@ class SelectChoice():
             "name": "SelectChoice",
             "description": "Choose a number to select a choice",
             "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "index": {
-                            "type": "string",
-                            "description": "A number. The number which represents your choice."
-                        }
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "string",
+                        "description": "A number. The number which represents your choice.",
                     }
-            }
+                },
+            },
         }
 
     # Pseudo-function (Only need for paramaterized responses)
@@ -237,7 +265,7 @@ class SelectChoice():
         return choice
 
 
-class Agent():
+class Agent:
     def __init__(self):
         self.availableTools = registeredMicroTools
         self.useAvailable = False
@@ -246,7 +274,12 @@ class Agent():
     def Do(self, prompt, data):
         openai.api_key = fractal.OPENAI_API_KEY
         messages = []
-        messages.append({"role": "system", "content": f"These are your instructions, be organized and highly detailed: {prompt}"})
+        messages.append(
+            {
+                "role": "system",
+                "content": f"These are your instructions, be organized and highly detailed: {prompt}",
+            }
+        )
         messages.append({"role": "user", "content": str(data)})
         functions = None
         response = None
@@ -263,7 +296,7 @@ class Agent():
                 model="gpt-3.5-turbo-0613",
                 messages=messages,
                 functions=functions,
-                function_call="auto"
+                function_call="auto",
             )
             responseMsg = response["choices"][0]["message"]
 
@@ -271,15 +304,14 @@ class Agent():
                 chosenTool = toolInstances.get(responseMsg["function_call"]["name"])
                 functionToCall = chosenTool.func
 
-                functionJsonArgs = json.loads(
-                    responseMsg["function_call"]["arguments"])
+                functionJsonArgs = json.loads(responseMsg["function_call"]["arguments"])
 
                 return functionToCall(functionJsonArgs)
 
         else:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo-0613",
-                messages=messages)
+                model="gpt-3.5-turbo-0613", messages=messages
+            )
 
         return response
         # return response["choices"][0]["message"].get("content")
@@ -289,13 +321,21 @@ class Agent():
             self.loadedTools.append(name)
 
 
-class Task():
+class Task:
     start_default = datetime.today().strftime("%m-%d-%Y %H:%M")
     due_default = (datetime.today() + timedelta(days=7)).strftime("%m-%d-%Y %H:%M")
 
     def __init__(
-        self, name, description, start=start_default, due=due_default,
-        status="unstarted", priority=None, importance=None, comments=None):
+        self,
+        name,
+        description,
+        start=start_default,
+        due=due_default,
+        status="unstarted",
+        priority=None,
+        importance=None,
+        comments=None,
+    ):
         self.name = name
         self.description = description
         self.status = status
@@ -315,8 +355,8 @@ def genSchema(obj):
 
 
 def evalTask(task, values=None, interests=None):
-    '''Given a list of values and interests, an agent will evaluate the 
-       importance and priority of a task and make changes to a task'''
+    """Given a list of values and interests, an agent will evaluate the
+    importance and priority of a task and make changes to a task"""
     if not values or not interests:
         return None
 
@@ -325,7 +365,12 @@ def evalTask(task, values=None, interests=None):
         model="gpt-3.5-turbo-0613",
         messages=[
             # {"role": "system", "content": "Given the user's interests or values, rate the priority and importance accurately"},
-            {"role": "user", "content": "Analyze the user's values and interests and re-evaluate the priority and importance based on what would resonate with the user best. DATA: " + str({"task": task, "values": values, "interests": interests})}],
+            {
+                "role": "user",
+                "content": "Analyze the user's values and interests and re-evaluate the priority and importance based on what would resonate with the user best. DATA: "
+                + str({"task": task, "values": values, "interests": interests}),
+            }
+        ],
         functions=[
             {
                 "name": "evaluateTask",
@@ -350,34 +395,44 @@ def evalTask(task, values=None, interests=None):
                         # },
                         "priority": {
                             "type": "integer",
-                            "description": "The priority of the task 0 - 10"
+                            "description": "The priority of the task 0 - 10",
                         },
                         "importance": {
                             "type": "integer",
-                            "description": "The importance of the task 0 - 10"
+                            "description": "The importance of the task 0 - 10",
                         },
                         "comments": {
                             "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "description": "Comments related to the task"
+                            "items": {"type": "string"},
+                            "description": "Comments related to the task",
                         },
                         "reasoning": {
                             "type": "string",
-                            "description": "The logic and reasoning behind the priority and importance values"
-                        }
+                            "description": "The logic and reasoning behind the priority and importance values",
+                        },
                     },
-                    "required": ["priority", "importance", "comments", "reasoning"]
-                }
-            }],
-        function_call={"name": "evaluateTask"}
+                    "required": ["priority", "importance", "comments", "reasoning"],
+                },
+            }
+        ],
+        function_call={"name": "evaluateTask"},
     )
 
     print(response)
 
 
 if __name__ == "__main__":
-    print(CompleteTask().markTaskComplete(fractal.ADMIN_ID, "Clayton made some type of ramen"))
-    CompleteTask().setTaskStatus(fractal.ADMIN_ID, 4, "complete")
-    pass  # Testing goes here
+    # print(CompleteTask().markTaskComplete(
+    #     fractal.ADMIN_ID, "Clayton made some type of ramen"))
+    # CompleteTask().setTaskStatus(fractal.ADMIN_ID, 4, "complete")
+    # pass  # Testing goes here
+    # sendSelfie_instance = SendSelfie()
+    # sendSelfie_instance.sendSelfie(
+    #     fractal.ADMIN_ID,
+    #     emotion="happy",
+    #     verb="sitting",
+    #     place="diner",
+    #     condition="night",
+    #     nsfw=True,
+    # )
+    pass

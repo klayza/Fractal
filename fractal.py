@@ -11,21 +11,27 @@ from typing import Final
 from telegram import Update
 import configparser
 import toolbox
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
-'''
+"""
    TODO: Add ability to tell if the SD parameters are similar to the last one created to prevent duplicate images
    TODO: Fix prompts so ai doesn't repeat what I say
    TODO: History compression/cleaning
    TODO: Integrate into either telegram/discord/email or messages?
    TODO: Create agent to keep track of Ai's world to reduce amount of instructions being sent to the character to (prevent hallucions and increase clarity?)
    TODO: Add feature to add a character from a character card,or gui/tui?
-'''
+"""
 
 
 def loadSystemParameters():
     cfg = configparser.ConfigParser()
-    cfg.read('api.ini')
+    cfg.read("api.ini")
     if "Required" in cfg:
         return dict(cfg["Required"])
     else:
@@ -39,10 +45,17 @@ TOKEN = args.get("telegram_api_key")
 OPENAI_API_KEY = args.get("openai_api_key")
 
 ADMIN_ID = 6146500807
-BOT_USERNAME = '@.bot'
+USER_ID = ADMIN_ID
+BOT_USERNAME = "@.bot"
 OPENAI_MODEL = "gpt-3.5-turbo"
-defaultRuntimeVars = {"id": None, "userName": "Guest",
-                      "character": None, "nsfw": "false", "sd": "false", "lastMessage": None}
+defaultRuntimeVars = {
+    "id": None,
+    "userName": "Guest",
+    "character": None,
+    "nsfw": "false",
+    "sd": "false",
+    "lastMessage": None,
+}
 defaultUserVars = {"tasks": [], "values": [], "interests": []}
 characterTraitsWeight = 1
 characterStartMessageFrequency = 3
@@ -50,43 +63,44 @@ maxTokenSize = 2000
 
 
 def buildSDPayload(userID, parameters, type="default"):
-    '''
-        Builds the positive and negative prompts for stable diffusion.
+    """
+    Builds the positive and negative prompts for stable diffusion.
 
-        Gets the user's selected character's sd prompt then will replace words
-        if nsfw is enabled. Then adds additional paramaters like the setting, and atmosphere
-        as well as it's weight. 
-    '''
+    Gets the user's selected character's sd prompt then will replace words
+    if nsfw is enabled. Then adds additional paramaters like the setting, and atmosphere
+    as well as it's weight.
+    """
     config = getRuntimeVars(userID)
     character = config.get("character")
-    isNsfw = config.get("nsfw") == "true"
+    nsfwAllowed = config.get("nsfw") == "true"
 
-    SDDefaultPrompts = getSDDefault(userID, character)
-    # default, or quick, or selfie, or landscape
-    SDDefaultPayload = getSDPayload(type)
-    normalPrompt = SDDefaultPrompts[0]
-    negativePrompt = SDDefaultPrompts[1]
+    SDPrompts = getSDDefault(userID, character)
+    SDNormalPrompt = SDPrompts.get("positive")
+    SDNegativePrompt = SDPrompts.get("negative")
+    SDExplicitPayload = SDPrompts.get("payload")
 
-    if isNsfw:
-        pass
+    SDPayload = None
+    if SDExplicitPayload != None:
+        SDPayload = getSDPayload(SDExplicitPayload)
+    else:
+        SDPayload = getSDPayload(type)
 
-    SDPrompt = insertSDParams(parameters, normalPrompt, characterTraitsWeight)
-    SDDefaultPayload["prompt"] = SDPrompt
-    SDDefaultPayload["negative_prompt"] = negativePrompt
+    SDPositivePrompt = insertSDParams(parameters, SDNormalPrompt, characterTraitsWeight)
+    SDPayload["prompt"] = SDPositivePrompt
+    SDPayload["negative_prompt"] = SDNegativePrompt
 
-
-    return SDDefaultPayload
+    return SDPayload
 
 
 def updateConversation(userID, character, message):
-    '''
+    """
     Updates the conversation history for a given user and character.
 
     Parameters:
     - userID (str): The ID of the user.
     - character (str): The name of the character.
     - message (str): The message to be appended to the conversation history.
-    '''
+    """
 
     # Define the file path
     file_path = f"Data/{userID}/Characters/{character}/History.json"
@@ -108,16 +122,18 @@ def updateConversation(userID, character, message):
 
 def reduceMemory(userID, character):
     # Selects all lines up til the fourth history line
-    with open(f"Data/{userID}/Characters/{character}/CHPrompt.txt", "r", encoding="utf-8") as f:
+    with open(
+        f"Data/{userID}/Characters/{character}/CHPrompt.txt", "r", encoding="utf-8"
+    ) as f:
         lines = f.readlines()
         keepLines = []
         for i in range(0, len(lines)):
             if "--- history ---" in lines[i].lower():
                 keepLines.insert(i, lines[i])
-                if len(lines) > i+3:
-                    keepLines.insert(i+1, lines[i+1])
-                    keepLines.insert(i+2, lines[i+2])
-                    keepLines.insert(i+3, lines[i+3])
+                if len(lines) > i + 3:
+                    keepLines.insert(i + 1, lines[i + 1])
+                    keepLines.insert(i + 2, lines[i + 2])
+                    keepLines.insert(i + 3, lines[i + 3])
                 break
             keepLines.insert(i, lines[i])
     # Rewrites files with selected lines
@@ -126,13 +142,16 @@ def reduceMemory(userID, character):
 
 
 def getAvailableCharacters():
-    '''Returns list of character names in global'''
+    """Returns list of character names in global"""
     folderToSearch = r"Characters"
     if not os.path.exists(folderToSearch):
         return []
     files = os.listdir(folderToSearch)
-    characters = [os.path.splitext(file)[0] for file in files if os.path.isfile(
-        os.path.join(folderToSearch, file))]
+    characters = [
+        os.path.splitext(file)[0]
+        for file in files
+        if os.path.isfile(os.path.join(folderToSearch, file))
+    ]
     return characters
 
 
@@ -148,33 +167,41 @@ def getFileWordCount(character):
 
 
 def getSDDefault(id, character):
-    with open(f"Data/{id}/Characters/{character}/SDPrompt.txt", "r+", encoding="utf-8") as f:
-        lines = f.readlines()
-        if (lines[0] != ""):
-            return lines
+    with open(
+        f"Data/{id}/Characters/{character}/Diffusion.json", "r+", encoding="utf-8"
+    ) as f:
+        return json.load(f)
 
 
 def insertSDParams(parameters, default, weight):
-    '''Given character's generated parameters, default prompt string, 
-    and character trait weight returns string combining them all'''
+    """Given character's generated parameters, default prompt string,
+    and character trait weight returns string combining them all"""
 
-    return default.replace("$", ","+parameters[:-1]+":"+str(weight)+")")
+    pmStr = ", ".join(parameters)
+    default += f", ({pmStr}:{str(weight)})"
+    return default
 
 
 def getCharacterPrompt(userID, character):
-    '''Returns a json representation of a character'''
+    """Returns a json representation of a character"""
     if userID == 0:
         with open(f"Characters/{character}.json", "r+", encoding="utf-8") as f:
             return json.load(f)
     else:
-        with open(f"Data/{userID}/Characters/{character}/CharacterCard.json", "r+", encoding="utf-8") as f:
+        with open(
+            f"Data/{userID}/Characters/{character}/CharacterCard.json",
+            "r+",
+            encoding="utf-8",
+        ) as f:
             return json.load(f)
 
 
 # Learned something, only use one read() function in a with open f stream
 def getConversation(userID, character, chatID=None):
-    '''Returns a json conversation given userID, character name, and maybe, a chatID (for multiple chats)'''
-    with open(f"Data/{userID}/Characters/{character}/History.json", "r", encoding="utf-8") as f:
+    """Returns a json conversation given userID, character name, and maybe, a chatID (for multiple chats)"""
+    with open(
+        f"Data/{userID}/Characters/{character}/History.json", "r", encoding="utf-8"
+    ) as f:
         content = f.read()
         if content == "":
             return None
@@ -188,15 +215,15 @@ def getSystemPrompt():
 
 
 def varInsert(prompt: str, replacements: dict):
-    '''Takes in a string containg vars like for ex. {{user}} or {{char}}
-        and returns the prompt with the correlating values of parameter dict inserted
-        to each occurence
+    """Takes in a string containg vars like for ex. {{user}} or {{char}}
+    and returns the prompt with the correlating values of parameter dict inserted
+    to each occurence
 
-        Ex. prompt="Hi, my name is {{char}}. Hey {{char}}, my name is {{user}}
-            dict={"char":"joe","user":"clay"}
-        returns "Hi, my name is joe. Hey joe, my name is clay
+    Ex. prompt="Hi, my name is {{char}}. Hey {{char}}, my name is {{user}}
+        dict={"char":"joe","user":"clay"}
+    returns "Hi, my name is joe. Hey joe, my name is clay
 
-    '''
+    """
     for key, value in replacements.items():
         placeholder = "{{" + key + "}}"
         prompt = prompt.replace(placeholder, value)
@@ -205,17 +232,19 @@ def varInsert(prompt: str, replacements: dict):
 
 
 def processJsonPrompt(obj, get=""):
-    '''Appends specific set of vals of a dict to a str and returns new str'''
+    """Appends specific set of vals of a dict to a str and returns new str"""
 
     new = ""
     sepL = "\n---"
     sepR = "---\n"
-    include = {"Name": ["name", "char_name"],
-               "Description": ["description"],
-               "Scenario": ["scenario", "world_scenario"],
-               "Example Chat": ["sampleChat", "example_dialogue", "mes_example"],
-               "Persona": ["char_persona", "persona"],
-               "Personality": ["personality"]}
+    include = {
+        "Name": ["name", "char_name"],
+        "Description": ["description"],
+        "Scenario": ["scenario", "world_scenario"],
+        "Example Chat": ["sampleChat", "example_dialogue", "mes_example"],
+        "Persona": ["char_persona", "persona"],
+        "Personality": ["personality"],
+    }
 
     if get != "":
         sepL = ""
@@ -240,7 +269,7 @@ def processJsonPrompt(obj, get=""):
 
 
 def processMessageSchema(obj):
-    '''
+    """
     Process the given message schema to produce a list of messages.
 
     Args:
@@ -248,24 +277,23 @@ def processMessageSchema(obj):
 
     Returns:
     - list: List of message dictionaries.
-    '''
+    """
 
-    system_content = obj["system"]["rules"] + "\n" + \
-        obj["system"]["characterDetails"] + "\n" + obj["system"]["userDetails"]
-    system_message = {
-        "role": "system",
-        "content": system_content
-    }
+    system_content = (
+        obj["system"]["rules"]
+        + "\n"
+        + obj["system"]["characterDetails"]
+        + "\n"
+        + obj["system"]["userDetails"]
+    )
+    system_message = {"role": "system", "content": system_content}
 
     assistant_message = {
         "role": "assistant",
-        "content": obj["assistant"]["firstMessage"]
+        "content": obj["assistant"]["firstMessage"],
     }
 
-    user_message = {
-        "role": "user",
-        "content": obj["user"]
-    }
+    user_message = {"role": "user", "content": obj["user"]}
 
     messages = [system_message, assistant_message]
 
@@ -273,10 +301,7 @@ def processMessageSchema(obj):
         pass
     else:
         for entry in obj["history"]:
-            message = {
-                "role": entry["role"],
-                "content": entry["msg"]
-            }
+            message = {"role": entry["role"], "content": entry["msg"]}
         messages.append(message)
 
     messages.append(user_message)
@@ -285,7 +310,7 @@ def processMessageSchema(obj):
 
 
 def sendMessage(userID, character, userMessage):
-    '''Takes a character name string and message as parameters. Inits the ai model. Decodes response. Returns dict if successfull'''
+    """Takes a character name string and message as parameters. Inits the ai model. Decodes response. Returns dict if successfull"""
 
     config = getRuntimeVars(userID)
     user = config["userName"]
@@ -301,17 +326,18 @@ def sendMessage(userID, character, userMessage):
     historyJson = getConversation(userID, character)  # May be none
 
     messageSchema = {
-        "system":
-        {
+        "system": {
             "rules": varInsert(systemPrompt, vars),
             "characterDetails": varInsert(processJsonPrompt(characterJson), vars),
-            "userDetails": varInsert(userPrompt, vars)
+            "userDetails": varInsert(userPrompt, vars),
         },
         "assistant": {
-            "firstMessage": varInsert(processJsonPrompt(characterJson, get="Greeting"), vars)
+            "firstMessage": varInsert(
+                processJsonPrompt(characterJson, get="Greeting"), vars
+            )
         },
         "history": historyJson,
-        "user": userMessage
+        "user": userMessage,
     }
 
     messages = processMessageSchema(messageSchema)
@@ -327,11 +353,11 @@ def sendMessage(userID, character, userMessage):
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1,
-        frequency_penalty=.7,
+        frequency_penalty=0.7,
         presence_penalty=0,
         top_p=1,
         functions=functions,
-        function_call="auto"
+        function_call="auto",
     )
 
     replyText = ""
@@ -339,15 +365,13 @@ def sendMessage(userID, character, userMessage):
     secondResponseMsg = None
     responseMsg = response["choices"][0]["message"]
     if responseMsg.get("content"):
-        replyText = characterMessageClean(
-            responseMsg.get("content"), character)
+        replyText = characterMessageClean(responseMsg.get("content"), character)
 
     if responseMsg.get("function_call"):
         chosenTool = toolInstances.get(responseMsg["function_call"]["name"])
         functionToCall = chosenTool.func
 
-        functionJsonArgs = json.loads(
-            responseMsg["function_call"]["arguments"])
+        functionJsonArgs = json.loads(responseMsg["function_call"]["arguments"])
 
         functionResponse = None
         if chosenTool.needID:
@@ -367,18 +391,16 @@ def sendMessage(userID, character, userMessage):
             model=OPENAI_MODEL,
             messages=messages,
             temperature=1,
-            frequency_penalty=.7,
+            frequency_penalty=0.7,
             presence_penalty=0,
             top_p=1,
         )
 
     if secondResponse:
         secondResponseMsg = secondResponse["choices"][0]["message"]
-        replyText = characterMessageClean(
-            secondResponseMsg["content"], character)
+        replyText = characterMessageClean(secondResponseMsg["content"], character)
 
     print(response)
-    # log messages go here
     return replyText
 
 
@@ -393,24 +415,22 @@ def characterMessageClean(text, character):
 
 
 def getImage(payload):
+    config = getRuntimeVars(USER_ID)
     url = "http://127.0.0.1:7860"
-    response = requests.post(url=f'{url}/sdapi/v1/txt2img', json=payload)
+    response = requests.post(url=f"{url}/sdapi/v1/txt2img", json=payload)
     r = response.json()
 
-    for i in r['images']:
+    for i in r["images"]:
         image = Image.open(io.BytesIO(base64.b64decode(i.split(",", 1)[0])))
         png_payload = {"image": "data:image/png;base64," + i}
-        response2 = requests.post(
-            url=f'{url}/sdapi/v1/png-info', json=png_payload)
+        response2 = requests.post(url=f"{url}/sdapi/v1/png-info", json=png_payload)
         pnginfo = PngImagePlugin.PngInfo()
         pnginfo.add_text("parameters", response2.json().get("info"))
         now = datetime.now()
         date = now.strftime("%m-%d-%H-%M")
-        image.save(
-            f"C:/Users/cw1a/AI/PromptDiffusion/output/output{date}.png", pnginfo=pnginfo)
-        print(
-            f"\nImage recieved: C:/Users/cw1a/AI/PromptDiffusion/output/output{date}.png\n")
-        return f"C:/Users/cw1a/AI/PromptDiffusion/output/output{date}.png"
+        path = f"C:/Users/cw1a/AI/Fractal/Data/{USER_ID}/Characters/{config.get('character')}/output/output{date}.png"
+        image.save(path, pnginfo=pnginfo)
+        return path
 
 
 def getTime():
@@ -422,34 +442,36 @@ def getTime():
 # [1] Entry
 def initComm():
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler('start', start_command))
-    app.add_handler(CommandHandler('mode', mode_command))
-    app.add_handler(CommandHandler('clear', clear_command))
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("mode", mode_command))
+    app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(MessageHandler(filters.TEXT, handleMessage))
     app.add_error_handler(error)
 
-    print('Polling...')
+    print("Polling...")
     app.run_polling(poll_interval=5)
 
 
 def checkUserExists(userID):
-    return os.path.exists(f"Data/{userID}")    
+    return os.path.exists(f"Data/{userID}")
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     config = getRuntimeVars(update.message.chat.id)
     if checkUserExists(update.message.chat.id) and config.get("userName") != "Guest":
-        await update.message.reply_text(f"Hey {config.get('userName')}, who would you like to speak to?")
+        await update.message.reply_text(
+            f"Hey {config.get('userName')}, who would you like to speak to?"
+        )
         setRuntimeVars(update.message.chat.id, {"character": None})
     else:
         clearRuntimeVars(update.message.chat.id)
-        await update.message.reply_text('Greetings!\nWho am I speaking to?')
+        await update.message.reply_text("Greetings!\nWho am I speaking to?")
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character = getRuntimeVars(update.message.chat.id).get("character")
     clearConversation(update.message.chat.id, character)
-    await update.message.reply_text(f'Erased {character}\'s memory :(')
+    await update.message.reply_text(f"Erased {character}'s memory :(")
 
 
 async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -457,16 +479,18 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     userID = update.message.chat.id
     if "nsfw" in text:
         setRuntimeVars(userID, {"nsfw": "true"})
-        await update.message.reply_text('Ok, wow, noted.')
+        await update.message.reply_text("Ok, wow, noted.")
     elif "sfw" in text:
         setRuntimeVars(userID, {"nsfw": "false"})
-        await update.message.reply_text('Good boy! :)')
+        await update.message.reply_text("Good boy! :)")
     elif "sd" in text:
         setRuntimeVars(userID, {"sd": "true"})
-        await update.message.reply_text('Stable Diffusion mode enabled. Seperate words with a comma')
+        await update.message.reply_text(
+            "Stable Diffusion mode enabled. Seperate words with a comma"
+        )
     elif "chat" in text:
         setRuntimeVars(userID, {"sd": "false"})
-        await update.message.reply_text('Chat mode enabled.')
+        await update.message.reply_text("Chat mode enabled.")
 
 
 def clearConversation(userID, character):
@@ -490,28 +514,28 @@ def processUserInit(text: str, userID):
     config = getRuntimeVars(userID)
 
     # Detects users and stores their config
-    if (config.get("userName") == "Guest" and config.get("userName") != None):
+    if config.get("userName") == "Guest" and config.get("userName") != None:
         if len(text.split(" ")) < 2:
             setRuntimeVars(userID, {"userName": text})
             return f"Hey {text}, who would you like to speak to?"
         else:
             return "Try writing your first name, or shorter length"
 
-    elif (not config.get("userName") == "Guest"):
+    elif not config.get("userName") == "Guest":
         return characterSelect(incoming, userID)
 
-    return 'You silly, enter your name!'
+    return "You silly, enter your name!"
 
 
 # [2] Incoming messages come here
 async def handleMessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     userID = update.message.chat.id
+    USER_ID = userID
     config = getRuntimeVars(userID)
     response = ""
 
-    canChat = config.get("userName") != "Guest" and config.get(
-        "character") != None
+    canChat = config.get("userName") != "Guest" and config.get("character") != None
     print(f'User ({userID}): "{text}"')
 
     # User init. Handles their preferences
@@ -523,7 +547,7 @@ async def handleMessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
         setRuntimeVars(userID, {"lastMessageTime": getTime()})
 
         if doStableDiffusion:
-            imagePath = getImage(buildSDPayload(userID, "("+text+")"))
+            imagePath = getImage(buildSDPayload(userID, "(" + text + ")"))
             sendPhoto(imagePath, userID)
 
         else:
@@ -532,10 +556,20 @@ async def handleMessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             characterMessage = sendMessage(userID, config["character"], text)
             print(f"{config['character']}: {characterMessage}")
-            updateConversation(userID, config["character"], {
-                               "name": config["userName"], "role": "user", "msg": text})
-            updateConversation(userID, config["character"], {
-                               "name": config["character"], "role": "assistant", "msg": characterMessage})
+            updateConversation(
+                userID,
+                config["character"],
+                {"name": config["userName"], "role": "user", "msg": text},
+            )
+            updateConversation(
+                userID,
+                config["character"],
+                {
+                    "name": config["character"],
+                    "role": "assistant",
+                    "msg": characterMessage,
+                },
+            )
 
             # sendPhoto(getImage(buildSDPayload(userID, parameters)), userID)
 
@@ -545,27 +579,28 @@ async def handleMessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(response)
 
+
 # Log errors
 
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f'Update {update} caused error {context.error}')
+    print(f"Update {update} caused error {context.error}")
 
 
 def sendPhoto(file, chatID):
-    url = f'https://api.telegram.org/bot{TOKEN}/sendPhoto?chat_id={chatID}'
-    img = open(file, 'rb')
-    requests.post(url, files={'photo': img})
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto?chat_id={chatID}"
+    img = open(file, "rb")
+    requests.post(url, files={"photo": img})
 
 
 def setRuntimeVars(id: int, data: dict):
-    '''Appends new dictionary items to existing or non-existing config'''
+    """Appends new dictionary items to existing or non-existing config"""
     old = getRuntimeVars(id)
     old.update(data)
     with open(f"Data/{id}/Runtime.json", "w") as f:
         json.dump(old, f)
 
-    '''Creates a new folder tree and associated files for a user | Overwrites runtime if called'''
+    """Creates a new folder tree and associated files for a user | Overwrites runtime if called"""
 
 
 def genRuntimeVars(id):
@@ -583,7 +618,13 @@ def genRuntimeVars(id):
             json.dump(data, f)
 
 
-def genCharacterVars(id, character, useGlobal=False, overWrite=False, targets=["History.json", "CharacterCard.json"]):
+def genCharacterVars(
+    id,
+    character,
+    useGlobal=False,
+    overWrite=False,
+    targets=["History.json", "CharacterCard.json"],
+):
     newDir = f"Data/{id}/Characters/{character}"
     print(newDir)
     os.makedirs(newDir + "/Output", exist_ok=True)
@@ -603,18 +644,18 @@ def genCharacterVars(id, character, useGlobal=False, overWrite=False, targets=["
 
 
 def getRuntimeVars(id):
-    '''Returns a dict of id's config. Creates a blank config if none found'''
-    if (not os.path.exists(f"Data/{id}/Runtime.json")):
+    """Returns a dict of id's config. Creates a blank config if none found"""
+    if not os.path.exists(f"Data/{id}/Runtime.json"):
         genRuntimeVars(id)
     with open(f"Data/{id}/Runtime.json", "r") as f:
         return json.load(f)
 
 
 def clearRuntimeVars(id):
-    '''Replaces runtime vars with default'''
+    """Replaces runtime vars with default"""
     data = defaultRuntimeVars
     data["id"] = id
-    if (not os.path.exists(f"Data/{id}/Runtime.json")):
+    if not os.path.exists(f"Data/{id}/Runtime.json"):
         genRuntimeVars(id)
     with open(f"Data/{id}/Runtime.json", "w") as f:
         json.dump(data, f)
@@ -622,8 +663,7 @@ def clearRuntimeVars(id):
 
 def getSDPayload(type):
     with open(f"Payloads.json", "r") as f:
-        if type == "default":
-            return json.load(f)["default"]
+        return json.load(f)[type]
 
 
 def getUserData(userID):
@@ -637,5 +677,10 @@ def setUserData(userID, new):
             json.dump(new, f, indent=4)
 
 
+# vars = {"user": "Clay", "char": "Loona"}
+# characterJson = getCharacterPrompt(ADMIN_ID, "Loona")
+# print(varInsert(processJsonPrompt(characterJson), vars))
+
+
 if __name__ == "__main__":
-    initComm() # Run Telegram version       
+    initComm()  # Run Telegram version
