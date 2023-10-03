@@ -9,7 +9,6 @@ from datetime import datetime
 import openai
 from typing import Final
 from telegram import Update
-import configparser
 import toolbox
 from telegram.ext import (
     Application,
@@ -19,31 +18,50 @@ from telegram.ext import (
     ContextTypes,
 )
 
-"""
-   TODO: Add ability to tell if the SD parameters are similar to the last one created to prevent duplicate images
-   TODO: Fix prompts so ai doesn't repeat what I say
-   TODO: History compression/cleaning
-   TODO: Integrate into either telegram/discord/email or messages?
-   TODO: Create agent to keep track of Ai's world to reduce amount of instructions being sent to the character to (prevent hallucions and increase clarity?)
-   TODO: Add feature to add a character from a character card,or gui/tui?
-"""
-
+import os
 
 def loadSystemParameters():
-    cfg = configparser.ConfigParser()
-    cfg.read("api.ini")
-    if "Required" in cfg:
-        return dict(cfg["Required"])
-    else:
-        print("Please rename example.api.ini => api.ini to continue.")
-        exit()
+    params = ["TELEGRAM_API_KEY", "OPENAI_API_KEY"]
+    args = {}
+    
+    # Find global environment variables first. If not found, try the .env file
+    for param in params:
+        args[param] = os.environ.get(param)
 
+    # Check if there are missing values from the global env. If so, load the local .env file
+    if None in args.values() or '' in args.values():
+        loadEnv()
 
-args = loadSystemParameters()
+    # Validates and informs user what is missing
+    flag = False
+    for param in params:
+        if os.environ.get(param) == '':
+            print("Please enter in a value for " + param)
+            flag = True
+    
+    if flag: exit(1)
 
-TOKEN = args.get("telegram_api_key")
-OPENAI_API_KEY = args.get("openai_api_key")
+def loadEnv(dotenv_path=".env"):
+    """Load key-value pairs from a .env file into the environment."""
+    if not os.path.exists(dotenv_path):
+        raise ValueError(f"Please rename example.env -> .env: {dotenv_path}")
 
+    with open(dotenv_path, "r") as file:
+        for line in file:
+            line = line.strip()
+            if line and not line.startswith("#"):  # Ignore comments and empty lines
+                key, value = line.split("=", 1)
+                value = value.replace("\"", "").strip()
+                if value == "":
+                    continue # Skip empty values or existing environment variables
+                os.environ[key] = value
+
+# To test the function
+# loadSystemParameters()
+
+loadSystemParameters()
+TOKEN = os.environ.get("TELEGRAM_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ADMIN_ID = 6146500807
 USER_ID = ADMIN_ID
 BOT_USERNAME = "@.bot"
@@ -60,6 +78,9 @@ defaultUserVars = {"tasks": [], "values": [], "interests": []}
 characterTraitsWeight = 1
 characterStartMessageFrequency = 3
 maxTokenSize = 2000
+
+def main():
+    initComm()
 
 
 def buildSDPayload(userID, parameters, type="default"):
@@ -194,7 +215,6 @@ def getCharacterPrompt(userID, character):
             encoding="utf-8",
         ) as f:
             return json.load(f)
-
 
 # Learned something, only use one read() function in a with open f stream
 def getConversation(userID, character, chatID=None):
@@ -683,4 +703,4 @@ def setUserData(userID, new):
 
 
 if __name__ == "__main__":
-    initComm()  # Run Telegram version
+    main()
