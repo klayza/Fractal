@@ -284,7 +284,7 @@ def processJsonPrompt(obj, get=""):
                 new += f"{sepL}{title}{sepR}{obj[prop]}"
                 added_titles.add(title)  # Mark title as added
                 break
-
+    print(new)
     return new.strip()
 
 

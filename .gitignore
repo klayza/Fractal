@@ -7,3 +7,4 @@ Characters/*.json
 /temp.py
 /api.ini
 /__pycache__
+.env
