@@ -6,7 +6,7 @@ import base64
 from PIL import Image, PngImagePlugin
 from random import choice
 from datetime import datetime
-import openai
+from openai import OpenAI 
 from typing import Final
 from telegram import Update
 import toolbox
@@ -18,7 +18,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-import os
+client = OpenAI()
 
 def loadSystemParameters():
     params = ["TELEGRAM_API_KEY", "OPENAI_API_KEY"]
@@ -65,6 +65,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ADMIN_ID = 6146500807
 USER_ID = ADMIN_ID
 BOT_USERNAME = "@.bot"
+# OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_MODEL = "gpt-3.5-turbo"
 defaultRuntimeVars = {
     "id": None,
@@ -345,6 +346,7 @@ def sendMessage(userID, character, userMessage):
 
     historyJson = getConversation(userID, character)  # May be none
 
+    # exit()
     messageSchema = {
         "system": {
             "rules": varInsert(systemPrompt, vars),
@@ -359,6 +361,7 @@ def sendMessage(userID, character, userMessage):
         "history": historyJson,
         "user": userMessage,
     }
+    print(messageSchema)
 
     messages = processMessageSchema(messageSchema)
 
@@ -368,8 +371,9 @@ def sendMessage(userID, character, userMessage):
     toolSchemas = [instance.schema for instance in toolInstances.values()]
     functions = toolSchemas
 
-    openai.api_key = OPENAI_API_KEY
-    response = openai.ChatCompletion.create(
+    client.api_key = OPENAI_API_KEY
+    
+    response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1,
@@ -383,15 +387,15 @@ def sendMessage(userID, character, userMessage):
     replyText = ""
     secondResponse = None
     secondResponseMsg = None
-    responseMsg = response["choices"][0]["message"]
-    if responseMsg.get("content"):
-        replyText = characterMessageClean(responseMsg.get("content"), character)
+    responseMsg = response.choices[0].message
+    if responseMsg.content:
+        replyText = characterMessageClean(responseMsg.content, character)
 
-    if responseMsg.get("function_call"):
-        chosenTool = toolInstances.get(responseMsg["function_call"]["name"])
+    if responseMsg.function_call:
+        chosenTool = toolInstances.get(responseMsg.function_call.name)
         functionToCall = chosenTool.func
 
-        functionJsonArgs = json.loads(responseMsg["function_call"]["arguments"])
+        functionJsonArgs = json.loads(responseMsg.function_call.arguments)
 
         functionResponse = None
         if chosenTool.needID:
@@ -407,7 +411,7 @@ def sendMessage(userID, character, userMessage):
                 "content": str(functionResponse),
             }
         )
-        secondResponse = openai.ChatCompletion.create(
+        secondResponse = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
             temperature=1,
@@ -703,4 +707,5 @@ def setUserData(userID, new):
 
 
 if __name__ == "__main__":
+    # sendMessage(ADMIN_ID, "Kimaru", "Yo")
     main()
